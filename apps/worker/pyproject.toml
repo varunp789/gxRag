@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gxrag-worker"
+version = "0.1.0"
+description = "Worker service for the gxRag platform"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["worker*"]
+
