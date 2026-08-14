@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { productPackaging } from "../lib/portal-data";
+
 const portals = [
   {
     href: "/client",
@@ -42,7 +44,18 @@ export default function HomePage() {
           </Link>
         ))}
       </section>
+
+      <section className="grid two-up">
+        {productPackaging.map((pkg) => (
+          <article className="card" key={pkg.name}>
+            <h2>{pkg.name}</h2>
+            <p>{pkg.audience}</p>
+            <p>
+              <strong>Billing:</strong> {pkg.billingUnit}
+            </p>
+          </article>
+        ))}
+      </section>
     </main>
   );
 }
-

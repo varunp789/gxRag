@@ -1,3 +1,7 @@
+import Link from "next/link";
+
+import { workspaces } from "../../../lib/portal-data";
+
 const capabilities = [
   "Workspace dashboard",
   "Asset upload",
@@ -27,8 +31,32 @@ export default function ClientPortalPage() {
             ))}
           </ul>
         </article>
+
+        <article className="card">
+          <h2 className="section-title">Workspace switcher</h2>
+          <ul className="portal-list">
+            {workspaces.map((workspace) => (
+              <li key={workspace.id}>
+                <strong>{workspace.name}</strong>
+                <br />
+                {workspace.tenant} · {workspace.environment} · {workspace.region}
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="card">
+          <h2 className="section-title">Phase 3 entry points</h2>
+          <ul className="portal-list">
+            <li>
+              <Link href="/client/upload">Open unified upload flow</Link>
+            </li>
+            <li>
+              <Link href="/client/assets">Open workspace asset registry</Link>
+            </li>
+          </ul>
+        </article>
       </section>
     </main>
   );
 }
-

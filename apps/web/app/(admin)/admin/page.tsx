@@ -1,3 +1,7 @@
+import Link from "next/link";
+
+import { adminActions, adminTenants } from "../../../lib/portal-data";
+
 const controls = [
   "Tenant and workspace management",
   "Job queue inspection",
@@ -27,8 +31,39 @@ export default function AdminPortalPage() {
             ))}
           </ul>
         </article>
+
+        <article className="card">
+          <h2 className="section-title">Tenant inspection</h2>
+          <ul className="portal-list">
+            {adminTenants.map((tenant) => (
+              <li key={tenant.id}>
+                <strong>{tenant.name}</strong>
+                <br />
+                {tenant.plan} plan · {tenant.workspaces} workspace(s) ·{" "}
+                {tenant.status}
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="card">
+          <h2 className="section-title">Admin actions</h2>
+          <ul className="portal-list">
+            {adminActions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="card">
+          <h2 className="section-title">Phase 4 diagnostics</h2>
+          <ul className="portal-list">
+            <li>
+              <Link href="/admin/ingestion">Open ingestion diagnostics</Link>
+            </li>
+          </ul>
+        </article>
       </section>
     </main>
   );
 }
-
