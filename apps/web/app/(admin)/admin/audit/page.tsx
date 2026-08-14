@@ -1,0 +1,1 @@
+export default function Audit(){return <main className="shell"><section className="hero"><span className="eyebrow">Audit trail</span><h1>Support actions are recorded.</h1><p>Administrative and governance actions have a timestamped operational audit record.</p></section><section className="card"><code>GET /v1/admin/audit-logs</code></section></main>}

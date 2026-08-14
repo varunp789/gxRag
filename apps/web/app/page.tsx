@@ -21,18 +21,18 @@ export default function HomePage() {
   return (
     <main className="shell">
       <section className="hero">
-        <span className="eyebrow">Phase 0 foundation</span>
-        <h1>Graph RAG platform monorepo scaffold.</h1>
+        <span className="eyebrow">gxRag platform</span>
+        <h1>Knowledge you can retrieve, trace, and trust.</h1>
         <p>
-          This workspace now has a FastAPI backend, a worker service, and a
-          Next.js App Router frontend prepared for both customer and admin
-          surfaces.
+          Turn documents, tables, and web content into grounded retrieval and
+          answer experiences for your product.
         </p>
         <div className="pill-row">
           <span className="pill">FastAPI API</span>
           <span className="pill">Worker service</span>
           <span className="pill">Next.js App Router</span>
           <span className="pill">Client + Admin portals</span>
+          <Link className="pill" href="/client/onboarding">Start a workspace</Link>
         </div>
       </section>
 

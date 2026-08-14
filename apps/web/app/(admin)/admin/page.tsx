@@ -32,6 +32,13 @@ export default function AdminPortalPage() {
           </ul>
         </article>
 
+        <article className="card"><h2 className="section-title">Operations</h2><ul className="portal-list"><li><Link href="/admin/tenants">Tenant directory</Link></li><li><Link href="/admin/assets">Asset and job explorer</Link></li><li><Link href="/admin/usage">Usage and billing</Link></li><li><Link href="/admin/audit">Audit trail</Link></li><li><Link href="/admin/health">System health</Link></li></ul></article>
+
+        <article className="card">
+          <h2 className="section-title">Retrieval and answers</h2>
+          <ul className="portal-list"><li><Link href="/admin/queries">Query log explorer</Link></li><li><Link href="/admin/answers">Hosted answer audit</Link></li><li><Link href="/admin/models">Model diagnostics</Link></li></ul>
+        </article>
+
         <article className="card">
           <h2 className="section-title">Tenant inspection</h2>
           <ul className="portal-list">

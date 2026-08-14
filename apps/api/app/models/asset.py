@@ -8,6 +8,7 @@ class AssetSource(BaseModel):
     location: str
     mime_type: str
     created_at: str
+    content_base64: str | None = None
 
 
 class AssetUpload(BaseModel):
@@ -34,6 +35,10 @@ class Artifact(BaseModel):
     artifact_type: str
     storage_path: str
     format: str
+    version: int = 1
+    producer_step: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    provenance: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     created_at: str
 
@@ -43,7 +48,14 @@ class JobStep(BaseModel):
     job_id: str
     name: str
     status: str
+    order: int = 0
     adapter_key: str | None = None
+    idempotency_key: str | None = None
+    attempt_count: int = 0
+    max_retries: int = 0
+    started_at: str | None = None
+    completed_at: str | None = None
+    resume_cursor: str | None = None
     artifact_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -58,7 +70,34 @@ class ProcessingJob(BaseModel):
     updated_at: str
     current_step: str
     step_count: int
+    resumable: bool = True
+    retryable_steps: list[str] = Field(default_factory=list)
+    completed_step_count: int = 0
     steps: list[JobStep] = Field(default_factory=list)
+
+
+class IndexRecord(BaseModel):
+    id: str
+    asset_id: str
+    workspace_id: str
+    index_type: str
+    storage_backend: str
+    status: str
+    document_count: int
+    source_artifact_ids: list[str] = Field(default_factory=list)
+    reconciliation_status: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+    updated_at: str
+
+
+class IndexDiagnostic(BaseModel):
+    index_type: str
+    storage_backend: str
+    record_count: int
+    synced_count: int
+    stale_count: int
+    latest_asset_id: str | None = None
+    last_updated_at: str | None = None
 
 
 class Asset(BaseModel):
@@ -99,6 +138,7 @@ class AssetStatusResponse(BaseModel):
     processing_status: str
     current_job: ProcessingJob | None = None
     artifacts: list[Artifact] = Field(default_factory=list)
+    indexes: list[IndexRecord] = Field(default_factory=list)
 
 
 class UploadAssetRequest(BaseModel):
@@ -108,6 +148,7 @@ class UploadAssetRequest(BaseModel):
     mime_type: str
     size_bytes: int
     tags: list[str] = Field(default_factory=list)
+    content_base64: str | None = Field(default=None, exclude=True)
 
 
 class CreateAssetFromUrlRequest(BaseModel):
@@ -120,6 +161,7 @@ class CreateAssetFromUrlRequest(BaseModel):
 
 class ProcessAssetRequest(BaseModel):
     trigger: str = "manual"
+    content_base64: str | None = Field(default=None, exclude=True)
 
 
 class IngestionAdapterDefinition(BaseModel):
@@ -136,3 +178,9 @@ class IngestionDiagnostic(BaseModel):
     recent_warning_count: int
     latest_asset_id: str | None = None
 
+
+class ArtifactInspection(BaseModel):
+    asset_id: str
+    workspace_id: str
+    artifacts: list[Artifact] = Field(default_factory=list)
+    indexes: list[IndexRecord] = Field(default_factory=list)

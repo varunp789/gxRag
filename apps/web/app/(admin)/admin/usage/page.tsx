@@ -1,0 +1,1 @@
+export default function Usage(){return <main className="shell"><section className="hero"><span className="eyebrow">Usage and billing</span><h1>Metered workspace activity.</h1><p>Review document, query, and hosted-token usage before billing reconciliation.</p></section><section className="card"><code>GET /v1/admin/usage</code></section></main>}

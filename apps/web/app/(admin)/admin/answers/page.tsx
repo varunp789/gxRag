@@ -1,0 +1,1 @@
+export default function AnswerAuditPage(){return <main className="shell"><section className="hero"><span className="eyebrow">Answer audit</span><h1>Hosted-answer operations.</h1><p>Inspect answer logs, model selection, cache state, token usage, and retained citations.</p></section><section className="card"><code>GET /v1/admin/answer-logs</code></section></main>}

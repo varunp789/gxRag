@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function GraphExplorer(){return <main className="shell"><section className="hero"><span className="eyebrow">Graph explorer</span><h1>Follow entities to their evidence.</h1><p>Use an asset graph endpoint to inspect entities, relations, and retrieval-ready paths.</p></section><Link className="card" href="/client/retrieval"><h2>Run a graph query</h2><p>Open the query console and select graph mode.</p></Link></main>}

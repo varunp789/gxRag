@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function TableExplorer(){return <main className="shell"><section className="hero"><span className="eyebrow">Structured data</span><h1>Explore registered tables.</h1><p>Inspect table artifacts and use structured retrieval to filter data alongside documents and graph evidence.</p></section><Link className="card" href="/client/retrieval"><h2>Run a structured query</h2><p>Open the query console and select structured mode.</p></Link></main>}

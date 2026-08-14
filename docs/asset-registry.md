@@ -26,4 +26,5 @@ Date: August 13, 2026
 - No database migrations yet
 - No actual file storage or URL fetching yet
 - No background queue yet
-
+- Index records are mocked and not connected to real backends
+- Artifact inspection and provenance are scaffolded only

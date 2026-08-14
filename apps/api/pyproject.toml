@@ -11,7 +11,13 @@ dependencies = [
   "fastapi>=0.116.0",
   "uvicorn[standard]>=0.35.0",
   "pydantic>=2.11.0",
-  "pydantic-settings>=2.10.0"
+  "pydantic-settings>=2.10.0",
+  "redis>=5.0.0",
+  "psycopg[binary]>=3.2.0",
+  "httpx>=0.28.0",
+  "pypdf>=5.0.0",
+  "pandas>=2.0.0",
+  "openpyxl>=3.1.0"
 ]
 
 [tool.setuptools]
@@ -20,4 +26,3 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-

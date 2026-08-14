@@ -1,0 +1,1 @@
+export default function QueryLogPage(){return <main className="shell"><section className="hero"><span className="eyebrow">Query audit</span><h1>Retrieval activity.</h1><p>Review workspace query modes, result counts, and response behavior through the admin query-log endpoint.</p></section><section className="card"><code>GET /v1/admin/query-logs</code></section></main>}

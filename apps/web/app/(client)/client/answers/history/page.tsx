@@ -1,0 +1,1 @@
+export default function AnswerHistory(){return <main className="shell"><section className="hero"><span className="eyebrow">Answer history</span><h1>Review generated answers.</h1><p>Every hosted answer retains its model, token count, and retrieval citations for auditability.</p></section><section className="card"><code>GET /v1/admin/answer-logs</code></section></main>}

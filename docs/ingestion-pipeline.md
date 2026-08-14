@@ -16,17 +16,20 @@ Date: August 13, 2026
 
 ## Current Processing Behavior
 
-Processing is synchronous and mocked for now. Each asset:
+Processing remains synchronous and in-memory, but the scaffold now models the
+full Phase 5 pipeline plus Phase 6 index writes. Each asset:
 
-1. Creates a processing job
-2. Runs the adapter assigned to its asset type
-3. Produces a normalized artifact record
-4. Stores warnings and step state
+1. Creates a resumable processing job
+2. Tracks ordered step execution with idempotency keys and retry metadata
+3. Runs inspect/plan, parse/OCR/STT, normalize, chunking, embedding, entity,
+   relation, graph, and structured registration stages
+4. Produces versioned artifacts with producer-step metadata and provenance
+5. Registers vector, keyword, graph, and structured index records
+6. Exposes queue, artifact, and index diagnostics for admin views
 
 ## Deferred Work
 
-- Real parsing and extraction
-- OCR and STT integration
-- Queue-based execution
-- Persistent artifact storage
-
+- Real parsing, OCR, STT, and extraction engines
+- External queue orchestration and background workers
+- Persistent artifact and index storage
+- Cross-service reconciliation against actual storage backends

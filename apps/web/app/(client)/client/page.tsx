@@ -17,8 +17,8 @@ export default function ClientPortalPage() {
         <span className="eyebrow">Client portal</span>
         <h1>Customer-facing workspace experience.</h1>
         <p>
-          This route group is reserved for tenant users who upload content and
-          consume retrieval-ready knowledge.
+          Upload content, inspect the pipeline, and retrieve grounded evidence
+          from one workspace.
         </p>
       </section>
 
@@ -46,7 +46,7 @@ export default function ClientPortalPage() {
         </article>
 
         <article className="card">
-          <h2 className="section-title">Phase 3 entry points</h2>
+          <h2 className="section-title">Workspace tools</h2>
           <ul className="portal-list">
             <li>
               <Link href="/client/upload">Open unified upload flow</Link>
@@ -54,6 +54,10 @@ export default function ClientPortalPage() {
             <li>
               <Link href="/client/assets">Open workspace asset registry</Link>
             </li>
+            <li><Link href="/client/retrieval">Open retrieval playground</Link></li>
+            <li><Link href="/client/answers">Open hosted answers</Link></li>
+            <li><Link href="/client/graph">Explore graph data</Link></li>
+            <li><Link href="/client/tables">Explore structured tables</Link></li>
           </ul>
         </article>
       </section>

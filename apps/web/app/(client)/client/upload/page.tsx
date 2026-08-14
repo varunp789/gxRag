@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { uploadModes } from "../../../../lib/asset-data";
 
 export default function ClientUploadPage() {
@@ -7,10 +8,11 @@ export default function ClientUploadPage() {
         <span className="eyebrow">Asset upload</span>
         <h1>Unified ingestion entry point.</h1>
         <p>
-          This page represents the phase 3 asset registration flow for uploads
-          and URL-based ingestion within a workspace.
+          Add files or web content to the active workspace, then monitor queued
+          processing from the asset registry.
         </p>
       </section>
+      <section className="card"><p>For API ingestion, use the SDK or POST to the upload endpoint with source metadata and optional encoded content.</p><Link className="pill" href="/client/assets">View assets</Link></section>
 
       <section className="grid two-up">
         {uploadModes.map((mode) => (
@@ -23,4 +25,3 @@ export default function ClientUploadPage() {
     </main>
   );
 }
-

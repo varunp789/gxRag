@@ -1,0 +1,1 @@
+export default function Assets(){return <main className="shell"><section className="hero"><span className="eyebrow">Assets and jobs</span><h1>Pipeline operations.</h1><p>Inspect asset state, job timelines, artifacts, indexes, and retry failed work through the admin API.</p></section><section className="card"><code>GET /v1/admin/assets · GET /v1/admin/jobs</code></section></main>}

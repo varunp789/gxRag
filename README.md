@@ -61,12 +61,30 @@ docker compose -f infra/docker-compose.yml up -d
 
 ## Current status
 
-This is the initial repo foundation:
+The compose stack also starts the API and worker. The worker consumes Redis jobs,
+with a durable local spool only for development when Redis is unavailable.
+
+## Processing and index configuration
+
+`POST /v1/assets/{asset_id}/process` is asynchronous. Upload requests may include
+an optional `content_base64` field; URL assets are fetched by the worker. The
+worker stores extracted source evidence under `GXRAG_ARTIFACT_ROOT` and durable
+job state under `GXRAG_PROCESSING_STATE_PATH`.
+
+The index writers use pgvector, OpenSearch, ArangoDB, and PostgreSQL. Configure
+their URLs in `.env` (see `.env.example`) before processing. Failed backend
+writes are retained as failed index records and can be requeued with
+`POST /v1/admin/index/reconcile`.
+
+## Current status
+
+The platform now includes:
 
 - monorepo layout
 - base FastAPI app
 - base Next.js app with client and admin route groups
-- worker scaffold
+- provider-backed PDF, spreadsheet, web, image OCR, and hosted audio STT paths
+- durable worker queue and resumable processing jobs
+- concrete pgvector, OpenSearch, ArangoDB, and PostgreSQL index writers
 - shared SDK package skeletons
 - Docker Compose for local services
-

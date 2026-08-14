@@ -5,21 +5,29 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies.access import get_current_admin, get_current_workspace
 from app.models.access import AdminUser, Workspace
 from app.models.asset import (
+    ArtifactInspection,
     AssetBundle,
     AssetStatusResponse,
     CreateAssetFromUrlRequest,
     IngestionDiagnostic,
+    IndexDiagnostic,
     ProcessAssetRequest,
+    ProcessingJob,
     UploadAssetRequest,
 )
 from app.services.asset_registry import (
     create_uploaded_asset,
     create_url_asset,
+    get_artifact_inspection,
     get_asset_bundle,
     get_asset_status,
     list_assets,
     list_assets_for_admin,
     list_ingestion_diagnostics,
+    list_index_diagnostics,
+    list_processing_jobs,
+    enqueue_index_reconciliation,
+    retry_processing_job,
     process_asset,
 )
 
@@ -108,3 +116,61 @@ def ingestion_diagnostics(
     _: Annotated[AdminUser, Depends(get_current_admin)],
 ) -> list[IngestionDiagnostic]:
     return list_ingestion_diagnostics()
+
+
+@router.get("/admin/jobs", response_model=list[ProcessingJob], tags=["admin"])
+def admin_job_list(
+    _: Annotated[AdminUser, Depends(get_current_admin)],
+) -> list[ProcessingJob]:
+    return list_processing_jobs()
+
+
+@router.post("/admin/jobs/{job_id}/retry", response_model=ProcessingJob, tags=["admin"])
+def retry_job(
+    job_id: str,
+    _: Annotated[AdminUser, Depends(get_current_admin)],
+) -> ProcessingJob:
+    job = retry_processing_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Processing job not found.")
+    return job
+
+
+@router.get(
+    "/admin/assets/{asset_id}/artifacts",
+    response_model=ArtifactInspection,
+    tags=["admin"],
+)
+def admin_artifact_inspection(
+    asset_id: str,
+    _: Annotated[AdminUser, Depends(get_current_admin)],
+) -> ArtifactInspection:
+    inspection = get_artifact_inspection(asset_id)
+    if inspection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset artifacts not found.",
+        )
+    return inspection
+
+
+@router.get(
+    "/admin/index/diagnostics",
+    response_model=list[IndexDiagnostic],
+    tags=["admin"],
+)
+def index_diagnostics(
+    _: Annotated[AdminUser, Depends(get_current_admin)],
+) -> list[IndexDiagnostic]:
+    return list_index_diagnostics()
+
+
+@router.post(
+    "/admin/index/reconcile",
+    response_model=list[ProcessingJob],
+    tags=["admin"],
+)
+def reconcile_indexes(
+    _: Annotated[AdminUser, Depends(get_current_admin)],
+) -> list[ProcessingJob]:
+    return enqueue_index_reconciliation()

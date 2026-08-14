@@ -9,5 +9,5 @@ __pycache__
 *.pyc
 .env
 .env.local
+.gxrag/
 .DS_Store
-

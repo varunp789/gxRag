@@ -37,8 +37,31 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
 
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      GXRAG_REDIS_URL: redis://redis:6379/0
+      GXRAG_VECTOR_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
+      GXRAG_OPENSEARCH_URL: http://opensearch:9200
+      GXRAG_ARANGODB_URL: http://arangodb:8529
+    ports:
+      - "8000:8000"
+    depends_on: [postgres, redis, arangodb, opensearch]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      GXRAG_REDIS_URL: redis://redis:6379/0
+      GXRAG_VECTOR_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
+      GXRAG_OPENSEARCH_URL: http://opensearch:9200
+      GXRAG_ARANGODB_URL: http://arangodb:8529
+    depends_on: [api, redis]
+
 volumes:
   postgres_data:
   arangodb_data:
   opensearch_data:
-
