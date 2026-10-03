@@ -126,3 +126,12 @@ def test_reprocessing_creates_new_artifact_version(client):
     run_worker_until_idle()
     versions = sorted(p.name for p in (Path(settings.artifact_root) / "ws_orbit_prod" / asset_id).iterdir())
     assert versions == ["v1", "v2"]
+
+
+def test_json_store_picks_up_writes_from_another_process(client):
+    """API and worker are separate processes: the API must see the worker's results."""
+    asset_id, _ = ingest(client, owner(), title="Launch", text=PAGE)
+    state = json.loads(Path(settings.processing_state_path).read_text())
+    state["assets"][-1]["title"] = "Edited by another process"
+    Path(settings.processing_state_path).write_text(json.dumps(state))
+    assert client.get(f"/v1/assets/{asset_id}", headers=owner()).json()["asset"]["title"] == "Edited by another process"

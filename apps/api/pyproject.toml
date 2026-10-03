@@ -20,8 +20,28 @@ dependencies = [
   "openpyxl>=3.1.0"
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "pip-audit>=2.7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --show-capture=no"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 140
+extend-exclude = ["app/db/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E701", "E702", "E501", "B008", "E731", "B905"]
+
 [tool.setuptools]
 package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+"app.db" = ["migrations/*.sql"]
 
 [tool.setuptools.packages.find]
 where = ["."]

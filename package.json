@@ -12,8 +12,11 @@
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",
     "typecheck:web": "npm --workspace apps/web run typecheck",
-    "check": "npm run lint:web && npm run typecheck:web",
-    "test": "echo \"Tests are not wired yet\""
+    "check": "npm run lint:web && npm run typecheck:web && npm run typecheck:sdk && npm run test",
+    "test": "npm --workspace apps/web run test && npm --workspace libs/sdk-ts run test",
+    "typecheck:sdk": "npm --workspace libs/sdk-ts run typecheck"
+  },
+  "overrides": {
+    "postcss": "^8.5.23"
   }
 }
-

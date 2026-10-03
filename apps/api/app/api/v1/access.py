@@ -1,7 +1,6 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
 from pydantic import BaseModel
 
 from app.dependencies.access import (
@@ -12,13 +11,13 @@ from app.dependencies.access import (
 )
 from app.models.access import AccessOverview, AdminUser, ApiKey, User, Workspace, WorkspaceScope
 from app.services import api_keys
-from app.services.governance import audit
 from app.services.catalog import (
     get_access_overview,
     get_tenant,
     get_workspace_scope,
     list_workspaces_for_user,
 )
+from app.services.governance import audit
 
 router = APIRouter()
 

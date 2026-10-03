@@ -12,7 +12,7 @@ import psycopg
 
 from app.core.config import settings
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def pending_migrations(applied: set[str]) -> list[Path]:

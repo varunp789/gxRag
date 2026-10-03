@@ -1,9 +1,13 @@
 """Structured telemetry and operational diagnostics shared by API and workers."""
 from __future__ import annotations
-import json, logging, time
+
+import json
+import logging
+import time
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
+
 from app.core.config import settings
 
 trace_id: ContextVar[str] = ContextVar("trace_id", default="")

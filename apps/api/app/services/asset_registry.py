@@ -1,9 +1,11 @@
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
+from app.core.config import settings
+from app.db import store as db_store
+from app.models.access import Workspace
 from app.models.asset import (
     Artifact,
     ArtifactInspection,
@@ -14,16 +16,19 @@ from app.models.asset import (
     AssetUpload,
     AssetVersion,
     CreateAssetFromUrlRequest,
-    IngestionDiagnostic,
     IndexDiagnostic,
     IndexRecord,
+    IngestionDiagnostic,
     JobStep,
     ProcessAssetRequest,
     ProcessingJob,
     UploadAssetRequest,
 )
-from app.models.access import Workspace
-from app.services.catalog import get_workspace, get_workspace_scope
+from app.services.catalog import get_workspace
+from app.services.extractors import extract, read_source
+from app.services.governance import audit, enforce_quota, record
+from app.services.index_backends import write_graph, write_keyword, write_structured, write_vector
+from app.services.job_queue import enqueue
 from app.services.pipeline import (
     build_artifact,
     build_index_records,
@@ -33,14 +38,7 @@ from app.services.pipeline import (
     run_processing_stages,
     utc_now,
 )
-from app.core.config import settings
-from app.db import store as db_store
-from app.services.job_queue import enqueue
-from app.services.extractors import extract, read_source
 from app.services.text import chunk_text, extract_entities, extract_relations
-from app.services.index_backends import write_graph, write_keyword, write_structured, write_vector
-from app.services.governance import audit, enforce_quota, record
-
 
 ASSETS: list[Asset] = []
 ASSET_SOURCES: list[AssetSource] = []
@@ -67,13 +65,19 @@ def _snapshot() -> dict[str, list[dict]]:
     }
 
 
+_json_mtime: list[float | None] = [None]
+
+
 def _persist_state() -> None:
     if db_store.enabled():
         db_store.save_all(_snapshot())
         return
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_snapshot(), indent=2))
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(_snapshot(), indent=2))
+    temp.replace(path)  # atomic: a concurrent reader never sees a half-written file
+    _json_mtime[0] = path.stat().st_mtime_ns
 
 
 def _apply_payload(payload: dict) -> None:
@@ -98,12 +102,14 @@ def _load_state() -> bool:
     if not path.exists():
         return False
     _apply_payload(json.loads(path.read_text()))
+    _json_mtime[0] = path.stat().st_mtime_ns
     return True
 
 
 def reset_state() -> None:
     """Drop in-memory state (tests and fresh-process bootstrap)."""
     _apply_payload({key: [] for key in db_store.TABLES})
+    _json_mtime[0] = None
 
 
 def _new_id(prefix: str) -> str:
@@ -184,7 +190,13 @@ def seed_assets() -> None:
         if _load_state():
             return
         _apply_payload({key: [] for key in db_store.TABLES})
-    elif ASSETS or _load_state():
+    elif ASSETS:
+        # JSON dev store: pick up writes made by another process (API <-> worker).
+        path = _state_path()
+        if path.exists() and path.stat().st_mtime_ns != _json_mtime[0]:
+            _load_state()
+        return
+    elif _load_state():
         return
 
     created_at = "2026-08-13T10:00:00Z"
@@ -704,18 +716,18 @@ def _execute_asset(
         "structured": lambda: write_structured(workspace_id=workspace.id, asset_id=asset.id, rows=extracted.rows),
     }
     observed_indexes: list[IndexRecord] = []
-    for record in index_records:
+    for index_record in index_records:
         try:
-            written = writers[record.index_type]()
-            observed_indexes.append(record.model_copy(update={
+            written = writers[index_record.index_type]()
+            observed_indexes.append(index_record.model_copy(update={
                 "status": "synced", "document_count": written.document_count,
                 "reconciliation_status": "reconciled",
-                "metadata": {**record.metadata, "external_id": written.external_id},
+                "metadata": {**index_record.metadata, "external_id": written.external_id},
             }))
         except Exception as error:
-            observed_indexes.append(record.model_copy(update={
+            observed_indexes.append(index_record.model_copy(update={
                 "status": "failed", "document_count": 0, "reconciliation_status": "pending",
-                "metadata": {**record.metadata, "last_error": str(error)},
+                "metadata": {**index_record.metadata, "last_error": str(error)},
             }))
     INDEX_RECORDS[:] = [record for record in INDEX_RECORDS if record.asset_id != asset.id]
     INDEX_RECORDS.extend(observed_indexes)

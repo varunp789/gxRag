@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     jwt_issuer: str = "gxrag"
     jwt_leeway_seconds: int = 30
     rate_limit_per_minute: int = 120
+    retention_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

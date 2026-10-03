@@ -1,6 +1,4 @@
 import base64
-import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,6 +37,8 @@ def isolated_state(tmp_path, monkeypatch):
                        ("write_graph", "graph"), ("write_structured", "structured")):
         monkeypatch.setattr(asset_registry, name, FakeWrite(kind))
 
+    from app.services import retention
+    monkeypatch.setattr(retention, "delete_asset_everywhere", lambda **kw: None)
     asset_registry.reset_state()
     api_keys.reset()
     governance.USAGE.clear()
@@ -85,8 +85,8 @@ def b64(text: str) -> str:
 
 
 def run_worker_until_idle(limit: int = 10) -> int:
-    from worker.main import run_once
     from worker.config import settings as worker_settings
+    from worker.main import run_once
 
     worker_settings.poll_timeout_seconds = 0
     processed = 0

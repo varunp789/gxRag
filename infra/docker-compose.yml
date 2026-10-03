@@ -3,6 +3,11 @@ services:
     image: pgvector/pgvector:pg17
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gxrag} -d ${POSTGRES_DB:-gxrag}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-gxrag}
       POSTGRES_USER: ${POSTGRES_USER:-gxrag}
@@ -12,6 +17,9 @@ services:
 
   redis:
     image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
 
@@ -37,31 +45,62 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
 
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "-m", "app.db.migrate", "--seed"]
+    environment:
+      GXRAG_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
-    environment:
+    environment: &app-env
+      GXRAG_ENVIRONMENT: ${GXRAG_ENVIRONMENT:-development}
+      GXRAG_AUTH_MODE: ${GXRAG_AUTH_MODE:-dev}
+      GXRAG_JWT_SECRET: ${GXRAG_JWT_SECRET:-}
+      GXRAG_WEBHOOK_SECRET: ${GXRAG_WEBHOOK_SECRET:-}
+      GXRAG_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
       GXRAG_REDIS_URL: redis://redis:6379/0
       GXRAG_VECTOR_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
       GXRAG_OPENSEARCH_URL: http://opensearch:9200
       GXRAG_ARANGODB_URL: http://arangodb:8529
+      GXRAG_ARANGODB_PASSWORD: ${ARANGODB_ROOT_PASSWORD:-gxrag}
+      GXRAG_OPENAI_API_KEY: ${GXRAG_OPENAI_API_KEY:-}
+      GXRAG_STRIPE_SECRET_KEY: ${GXRAG_STRIPE_SECRET_KEY:-}
     ports:
       - "8000:8000"
-    depends_on: [postgres, redis, arangodb, opensearch]
+    volumes:
+      - artifacts:/var/lib/gxrag
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
 
   worker:
     build:
       context: ..
       dockerfile: apps/worker/Dockerfile
-    environment:
-      GXRAG_REDIS_URL: redis://redis:6379/0
-      GXRAG_VECTOR_DATABASE_URL: postgresql://gxrag:gxrag@postgres:5432/gxrag
-      GXRAG_OPENSEARCH_URL: http://opensearch:9200
-      GXRAG_ARANGODB_URL: http://arangodb:8529
-    depends_on: [api, redis]
+    environment: *app-env
+    volumes:
+      - artifacts:/var/lib/gxrag
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
 
 volumes:
+  artifacts:
+  redis_data:
   postgres_data:
   arangodb_data:
   opensearch_data:

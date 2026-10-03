@@ -1,4 +1,4 @@
-from tests.conftest import b64, bearer, owner
+from tests.conftest import owner
 
 
 def _create(client, role="retrieval_reader", headers=None):

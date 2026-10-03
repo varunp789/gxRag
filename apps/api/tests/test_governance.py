@@ -3,7 +3,7 @@ import hmac
 
 from app.core.config import settings
 from app.services import catalog
-from tests.conftest import analyst, b64, ingest, owner
+from tests.conftest import analyst, ingest, owner
 
 BODY = {"title": "t", "asset_type": "web_page", "file_name": "a.html", "mime_type": "text/html", "size_bytes": 1}
 
@@ -51,7 +51,6 @@ def test_query_quota_enforced(client, monkeypatch):
 
 def test_usage_resets_when_the_month_rolls_over(client, monkeypatch):
     from app.db import store
-    from app.services import governance
 
     client.post("/v1/query/vector", json={"query": "x"}, headers=owner())
     assert client.get("/v1/usage", headers=owner()).json()["usage"]["query"] == 1

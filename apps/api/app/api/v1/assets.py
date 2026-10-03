@@ -9,8 +9,8 @@ from app.models.asset import (
     AssetBundle,
     AssetStatusResponse,
     CreateAssetFromUrlRequest,
-    IngestionDiagnostic,
     IndexDiagnostic,
+    IngestionDiagnostic,
     ProcessAssetRequest,
     ProcessingJob,
     UploadAssetRequest,
@@ -18,17 +18,17 @@ from app.models.asset import (
 from app.services.asset_registry import (
     create_uploaded_asset,
     create_url_asset,
+    enqueue_index_reconciliation,
     get_artifact_inspection,
     get_asset_bundle,
     get_asset_status,
     list_assets,
     list_assets_for_admin,
-    list_ingestion_diagnostics,
     list_index_diagnostics,
+    list_ingestion_diagnostics,
     list_processing_jobs,
-    enqueue_index_reconciliation,
-    retry_processing_job,
     process_asset,
+    retry_processing_job,
 )
 
 router = APIRouter()

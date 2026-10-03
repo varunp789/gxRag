@@ -14,7 +14,7 @@ from psycopg.conninfo import make_conninfo
 from app.core.config import settings
 from app.db import migrate as migrations
 from app.db import store
-from tests.conftest import b64, ingest, owner, rivet, run_worker_until_idle
+from tests.conftest import b64, ingest, owner, rivet
 
 ADMIN_URL = os.environ.get("GXRAG_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="GXRAG_TEST_DATABASE_URL not set")
@@ -84,8 +84,9 @@ def test_state_survives_process_restart(client, database):
 
 
 def test_worker_sees_assets_created_by_api_after_it_started(client, database):
-    from app.services import asset_registry
     from worker.main import run_once
+
+    from app.services import asset_registry
 
     asset_registry.seed_assets()  # worker boots and caches state first
     body = {"title": "Late", "asset_type": "web_page", "file_name": "a.html", "mime_type": "text/html",
@@ -150,3 +151,38 @@ def test_deletion_persists(client, database):
     assert client.delete(f"/v1/assets/{asset_id}", headers=owner()).status_code == 204
     assert _scalar(database, "SELECT status FROM assets WHERE id = %s", asset_id) == "deleted"
     assert _scalar(database, "SELECT data->>'location' FROM asset_sources WHERE asset_id = %s", asset_id) == "deleted://redacted"
+
+
+def test_purge_cascades_through_the_database_and_clears_index_tables(client, database, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import index_backends, retention
+
+    with psycopg.connect(database) as conn:  # the tables the index writers would create
+        conn.execute("CREATE TABLE IF NOT EXISTS gxrag_vectors (workspace_id text, asset_id text, chunk_id text, content text)")
+        conn.execute("CREATE TABLE IF NOT EXISTS gxrag_structured_rows (workspace_id text, asset_id text, row_number int, data jsonb)")
+    asset_id, _ = ingest(client, owner(), title="Launch", text=PAGE)
+    with psycopg.connect(database) as conn:
+        for table, extra in (("gxrag_vectors", "'0','x'"), ("gxrag_structured_rows", "0,'{}'")):
+            conn.execute(f"INSERT INTO {table} VALUES ('ws_orbit_prod','{asset_id}',{extra})")
+            conn.execute(f"INSERT INTO {table} VALUES ('ws_orbit_prod','asset_keep',{extra})")
+
+    class Reply:
+        status_code = 404
+
+    monkeypatch.setattr(index_backends.httpx, "post", lambda *a, **k: Reply())
+    monkeypatch.setattr(index_backends, "_arango_request", lambda *a, **k: Reply())
+    monkeypatch.setattr(settings, "vector_database_url", database)
+    monkeypatch.setattr(retention, "delete_asset_everywhere", index_backends.delete_asset_everywhere)
+
+    client.delete(f"/v1/assets/{asset_id}", headers=owner())
+    later = datetime.now(timezone.utc) + timedelta(days=settings.retention_days + 1)
+    assert retention.purge_due_assets(now=later)["purged"] == [asset_id]
+
+    for table in ("assets", "asset_sources", "asset_versions", "processing_jobs", "artifacts", "index_records"):
+        column = "id" if table == "assets" else "asset_id"
+        assert _scalar(database, f"SELECT count(*) FROM {table} WHERE {column} = %s", asset_id) == 0, table
+    for table in ("gxrag_vectors", "gxrag_structured_rows"):
+        assert _scalar(database, f"SELECT count(*) FROM {table} WHERE asset_id = %s", asset_id) == 0
+        assert _scalar(database, f"SELECT count(*) FROM {table} WHERE asset_id = 'asset_keep'") == 1
+    assert _scalar(database, "SELECT count(*) FROM audit_logs WHERE action = 'asset.purged'") == 1

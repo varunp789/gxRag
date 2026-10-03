@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
@@ -71,7 +72,7 @@ def delete_asset(asset_id: str, access: Annotated[WorkspaceAccess, Depends(requi
     if not asset or asset.workspace_id != access.workspace.id:
         return Response(status_code=404)
     ASSETS[ASSETS.index(asset)] = asset.model_copy(update={
-        "status": "deleted", "processing_status": "deleted",
+        "status": "deleted", "processing_status": "deleted", "updated_at": datetime.now(timezone.utc).isoformat(),
         "warnings": ["Secure deletion requested; retention policy applies."]})
     for source in [item for item in ASSET_SOURCES if item.asset_id == asset_id]:
         ASSET_SOURCES[ASSET_SOURCES.index(source)] = source.model_copy(
@@ -79,6 +80,16 @@ def delete_asset(asset_id: str, access: Annotated[WorkspaceAccess, Depends(requi
     _persist_state()
     audit(access.principal.actor, "asset.deletion_requested", "asset", asset_id, access.workspace.id)
     return Response(status_code=204)
+
+
+@router.post("/admin/retention/run", tags=["admin"])
+def run_retention(admin: Annotated[AdminUser, Depends(require_admin("admin.operate"))]):
+    """Purge assets past their retention deadline (also runnable as a scheduled job)."""
+    from app.services.retention import purge_due_assets
+
+    result = purge_due_assets()
+    audit(admin.email, "retention.run", "platform", "retention", None)
+    return result
 
 
 @router.post("/webhooks/{provider}", status_code=202, tags=["webhooks"])

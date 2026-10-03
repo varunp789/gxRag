@@ -130,3 +130,35 @@ def write_structured(*, workspace_id: str, asset_id: str, rows: list[dict[str, s
                     (workspace_id, asset_id, position, json.dumps(row)),
                 )
     return IndexWriteResult("structured", "postgres", len(rows), f"{workspace_id}:{asset_id}")
+
+
+def delete_asset_everywhere(*, workspace_id: str, asset_id: str) -> None:
+    """Remove an asset's data from every index. Missing indexes count as already deleted.
+
+    Raises on any backend failure so the retention job retries instead of
+    silently leaving customer data behind.
+    """
+    with psycopg.connect(settings.vector_database_url, connect_timeout=5) as connection:
+        with connection.cursor() as cursor:
+            for table in ("gxrag_vectors", "gxrag_structured_rows"):
+                try:
+                    cursor.execute(f"DELETE FROM {table} WHERE workspace_id = %s AND asset_id = %s",  # noqa: S608
+                                   (workspace_id, asset_id))
+                except psycopg.errors.UndefinedTable:
+                    connection.rollback()
+    response = httpx.post(
+        f"{settings.opensearch_url.rstrip('/')}/gxrag-chunks/_delete_by_query",
+        json={"query": {"bool": {"filter": [{"term": {"workspace_id.keyword": workspace_id}},
+                                            {"term": {"asset_id.keyword": asset_id}}]}}},
+        timeout=30,
+    )
+    if response.status_code not in {200, 404}:
+        response.raise_for_status()
+    database = settings.arangodb_database
+    for collection in ("gxrag_entities", "gxrag_relations"):
+        response = _arango_request("POST", f"/_db/{database}/_api/cursor", {
+            "query": f"FOR d IN {collection} FILTER d.workspace_id == @w AND d.asset_id == @a REMOVE d IN {collection}",
+            "bindVars": {"w": workspace_id, "a": asset_id},
+        })
+        if response.status_code not in {200, 201, 404}:
+            response.raise_for_status()

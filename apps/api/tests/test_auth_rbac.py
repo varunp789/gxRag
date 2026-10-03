@@ -33,7 +33,8 @@ def test_jwt_rejects_untrusted_tokens(client, jwt_mode, mutate):
     elif mutate == "wrong_issuer":
         token = issue_token("alex@orbit.bio", email="alex@orbit.bio", issuer="evil")
     elif mutate == "alg_none":
-        import base64, json
+        import base64
+        import json
         enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
         token = f"{enc({'alg': 'none'})}.{enc({'sub': 'a', 'email': 'alex@orbit.bio', 'iss': 'gxrag', 'exp': time.time() + 99})}."
     else:
@@ -80,8 +81,8 @@ def test_owner_has_workspace_permissions(client):
 
 
 def test_support_admin_cannot_operate_or_read_audit(client, monkeypatch):
-    from app.services import catalog
     from app.models.access import AdminUser
+    from app.services import catalog
 
     monkeypatch.setattr(catalog, "ADMIN_USERS", [*catalog.ADMIN_USERS,
                         AdminUser(id="a2", email="support@gxrag.dev", full_name="S", roles=["support_admin"])])
@@ -106,8 +107,9 @@ def test_runtime_config_validation(monkeypatch):
 
 
 def test_docs_hidden_outside_development(monkeypatch):
-    from app.main import create_application
     from fastapi.testclient import TestClient
+
+    from app.main import create_application
 
     monkeypatch.setattr(settings, "environment", "production")
     monkeypatch.setattr(settings, "auth_mode", "jwt")
