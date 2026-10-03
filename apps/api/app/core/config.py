@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     webhook_secret: str | None = None
     stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    # Origins a billing-portal return_url may point at (comma-separated env var).
+    billing_return_origins: list[str] = ["http://localhost:3000"]
     # "dev" trusts X-Actor-Email headers (local only); "jwt" requires bearer
     # tokens or workspace API keys and is mandatory outside development.
     auth_mode: str = "dev"

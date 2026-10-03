@@ -51,13 +51,38 @@ uvicorn app.main:app --reload --app-dir apps/api
 python -m worker.main
 ```
 
-### Infrastructure
+### Database
 
-Start local dependencies:
+Without `GXRAG_DATABASE_URL` the API keeps state in a local JSON file (development only). With it, state lives
+in PostgreSQL:
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+export GXRAG_DATABASE_URL=postgresql://gxrag:gxrag@localhost:5432/gxrag
+cd apps/api && python -m app.db.migrate --seed   # forward-only migrations + demo catalog
 ```
+
+### Infrastructure
+
+Start the full local stack (backing services, migrations, API, worker):
+
+```bash
+docker compose -f infra/docker-compose.yml up -d --build
+```
+
+### Tests and quality gates
+
+```bash
+pip install -e "apps/api[dev]" -e apps/worker -e "libs/sdk-py[dev]"
+cd apps/api
+python -m pytest                                  # unit, RBAC, tenant isolation, worker, eval gate
+GXRAG_TEST_DATABASE_URL=postgresql://postgres@localhost:5432/postgres python -m pytest   # + PostgreSQL integration
+python -m eval.run                                # retrieval / graph / citation quality gate
+ruff check .
+cd ../.. && npm run check                         # web lint, typecheck, SDK typecheck, vitest
+```
+
+See [docs/security.md](docs/security.md), [docs/deployment.md](docs/deployment.md) and
+[docs/evaluation.md](docs/evaluation.md).
 
 ## Current status
 

@@ -51,7 +51,7 @@ def test_migrations_are_idempotent_and_complete(database):
         "SELECT table_name FROM information_schema.tables WHERE table_schema='public'").fetchall()}
     assert {"tenants", "workspaces", "users", "workspace_members", "api_keys", "assets", "processing_jobs",
             "artifacts", "index_records", "usage_counters", "audit_logs", "schema_migrations"} <= tables
-    assert _scalar(database, "SELECT count(*) FROM schema_migrations") == 3
+    assert _scalar(database, "SELECT count(*) FROM schema_migrations") == 4
     assert _scalar(database, "SELECT count(*) FROM workspaces") == 3
 
 
@@ -186,3 +186,19 @@ def test_purge_cascades_through_the_database_and_clears_index_tables(client, dat
         assert _scalar(database, f"SELECT count(*) FROM {table} WHERE asset_id = %s", asset_id) == 0
         assert _scalar(database, f"SELECT count(*) FROM {table} WHERE asset_id = 'asset_keep'") == 1
     assert _scalar(database, "SELECT count(*) FROM audit_logs WHERE action = 'asset.purged'") == 1
+
+
+def test_billing_mapping_and_webhook_dedup_persist(client, database):
+    from app.core.security import issue_token  # noqa: F401
+    from app.services import billing
+    from app.services.governance import sign_webhook
+
+    assert client.put("/v1/admin/tenants/tenant_orbit/billing-customer", json={"customer_id": "cus_db1"}).status_code == 204
+    assert _scalar(database, "SELECT stripe_customer_id FROM tenants WHERE id = 'tenant_orbit'") == "cus_db1"
+    assert client.put("/v1/admin/tenants/tenant_rivet/billing-customer", json={"customer_id": "cus_db1"}).status_code == 409
+    body = b'{"id":"evt_db","type":"invoice.paid","data":{"object":{"customer":"cus_db1"}}}'
+    send = lambda: client.post("/v1/webhooks/stripe", content=body, headers={"Stripe-Signature": sign_webhook(body, settings.stripe_webhook_secret)})  # noqa: E731
+    assert send().json()["duplicate"] is False
+    billing.reset()  # in-memory state is irrelevant: dedup must come from the database
+    assert send().json()["duplicate"] is True
+    assert _scalar(database, "SELECT count(*) FROM webhook_events") == 1

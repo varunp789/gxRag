@@ -40,18 +40,50 @@ def enforce_quota(workspace_id:str, unit:str)->None:
     workspace=next(item for item in WORKSPACES if item.id==workspace_id); plan=next(item for item in PLANS if item.id==next(tenant.plan_id for tenant in TENANTS if tenant.id==workspace.tenant_id)); limit=plan.monthly_document_limit if unit=="document" else plan.monthly_query_limit
     if usage(workspace_id).get(unit,0)>=limit: raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,detail=f"{unit} quota exceeded.")
 def rate_limit(request:Request, limit:int|None=None)->None:
+    """Sliding-window limiter keyed by credential (hashed) or client address.
+
+    Runs before authentication, so keys are bounded: stale entries are pruned and
+    the table is capped to stop random tokens from exhausting memory.
+    """
     import time
     limit=limit or settings.rate_limit_per_minute
-    key=request.headers.get("authorization") or request.headers.get("x-actor-email") or (request.client.host if request.client else "anonymous"); current=time.time()
+    credential=request.headers.get("authorization") or request.headers.get("x-actor-email")
+    key=hashlib.sha256(credential.encode()).hexdigest()[:16] if credential else (request.client.host if request.client else "anonymous")
+    current=time.time()
     with _lock:
+        if len(RATE)>10_000:
+            for stale in [name for name,values in RATE.items() if not values or values[-1]<=current-60]: del RATE[stale]
+            if len(RATE)>10_000 and key not in RATE: raise HTTPException(status_code=429,detail="Rate limit exceeded.")
         values=[item for item in RATE[key] if item>current-60]; values.append(current); RATE[key]=values
         if len(values)>limit: raise HTTPException(status_code=429,detail="Rate limit exceeded.")
-def verify_webhook(payload:bytes, signature:str|None, secret:str|None)->None:
+WEBHOOK_TOLERANCE_SECONDS=300
+def verify_webhook(payload:bytes, signature:str|None, secret:str|None, now_ts:float|None=None)->str:
+    """Verify a ``t=<unix>,v1=<hex>`` signature over ``<t>.<payload>`` (Stripe-compatible).
+
+    Rejects stale timestamps so a captured request cannot be replayed later.
+    Returns the signed timestamp.
+    """
+    import time
     if not secret or not signature: raise HTTPException(status_code=401,detail="Webhook signature required.")
-    expected=hmac.new(secret.encode(),payload,hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected,signature): raise HTTPException(status_code=401,detail="Invalid webhook signature.")
+    parts=[item.split("=",1) for item in signature.split(",") if "=" in item]
+    timestamp=next((value for key,value in parts if key=="t"),None); candidates=[value for key,value in parts if key=="v1"]
+    if not timestamp or not candidates or not timestamp.isdigit(): raise HTTPException(status_code=401,detail="Invalid webhook signature.")
+    expected=hmac.new(secret.encode(),f"{timestamp}.".encode()+payload,hashlib.sha256).hexdigest()
+    if not any(hmac.compare_digest(expected,candidate) for candidate in candidates): raise HTTPException(status_code=401,detail="Invalid webhook signature.")
+    if abs((now_ts if now_ts is not None else time.time())-int(timestamp))>WEBHOOK_TOLERANCE_SECONDS: raise HTTPException(status_code=401,detail="Webhook timestamp outside tolerance.")
+    return timestamp
+def sign_webhook(payload:bytes, secret:str, timestamp:int|None=None)->str:
+    import time
+    ts=str(timestamp if timestamp is not None else int(time.time()))
+    return f"t={ts},v1="+hmac.new(secret.encode(),f"{ts}.".encode()+payload,hashlib.sha256).hexdigest()
 def export_json(value:object)->str: return json.dumps(value, default=lambda item: item.model_dump() if hasattr(item,"model_dump") else str(item))
-def billing_portal(customer_id:str, return_url:str)->str:
+def _return_url_allowed(return_url:str)->bool:
+    from urllib.parse import urlparse
+    parsed=urlparse(return_url); origin=f"{parsed.scheme}://{parsed.netloc}"
+    return parsed.scheme in {"https","http"} and origin in settings.billing_return_origins
+def billing_portal(customer_id:str|None, return_url:str)->str:
     if not settings.stripe_secret_key: raise HTTPException(status_code=503,detail="Stripe billing is not configured.")
+    if not customer_id: raise HTTPException(status_code=409,detail="No billing customer is linked to this tenant.")
+    if not _return_url_allowed(return_url): raise HTTPException(status_code=422,detail="return_url origin is not allowed.")
     response=httpx.post("https://api.stripe.com/v1/billing_portal/sessions",headers={"Authorization":f"Bearer {settings.stripe_secret_key}"},data={"customer":customer_id,"return_url":return_url},timeout=20)
     response.raise_for_status(); return response.json()["url"]

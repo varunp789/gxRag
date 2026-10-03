@@ -21,6 +21,8 @@ def isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "environment", "development")
     monkeypatch.setattr(settings, "jwt_secret", JWT_SECRET)
     monkeypatch.setattr(settings, "webhook_secret", "whsec_test")
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_stripe")
+    monkeypatch.setattr(settings, "stripe_secret_key", None)
     monkeypatch.setattr(settings, "rate_limit_per_minute", 10_000)
     monkeypatch.setattr(job_queue, "_redis_client", lambda: None)
 
@@ -39,6 +41,8 @@ def isolated_state(tmp_path, monkeypatch):
 
     from app.services import retention
     monkeypatch.setattr(retention, "delete_asset_everywhere", lambda **kw: None)
+    from app.services import billing
+    billing.reset()
     asset_registry.reset_state()
     api_keys.reset()
     governance.USAGE.clear()

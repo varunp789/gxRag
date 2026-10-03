@@ -21,7 +21,7 @@ def create_application() -> FastAPI:
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
-        token = trace_id.set(request.headers.get("X-Trace-Id") or uuid4().hex)
+        token = trace_id.set((request.headers.get("X-Trace-Id") or uuid4().hex)[:64])
         try:
             emit("http.request", method=request.method, path=request.url.path)
             if request.url.path.startswith(settings.api_prefix):

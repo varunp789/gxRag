@@ -1,13 +1,15 @@
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.dependencies.access import WorkspaceAccess, require_admin, require_permission
 from app.models.access import AdminUser
-from app.services import catalog
+from app.services import billing, catalog
 from app.services.asset_registry import (
     ARTIFACTS,
     ASSET_SOURCES,
@@ -33,13 +35,29 @@ def all_usage(_: Annotated[AdminUser, Depends(require_admin("admin.support"))]):
 
 @router.post("/billing/portal", tags=["governance"])
 def create_billing_portal(
-    customer_id: str,
     return_url: str,
     access: Annotated[WorkspaceAccess, Depends(require_permission("billing.manage"))],
 ):
+    """Open the Stripe portal for *this workspace's tenant*; the customer is never client-supplied."""
+    customer_id = billing.customer_for_tenant(access.workspace.tenant_id)
     url = billing_portal(customer_id, return_url)
     audit(access.principal.actor, "billing.portal_created", "workspace", access.workspace.id, access.workspace.id)
     return {"url": url}
+
+
+class LinkCustomerRequest(BaseModel):
+    customer_id: str = Field(pattern=r"^cus_[A-Za-z0-9]+$")
+
+
+@router.put("/admin/tenants/{tenant_id}/billing-customer", status_code=204, tags=["admin"])
+def link_billing_customer(
+    tenant_id: str,
+    payload: LinkCustomerRequest,
+    admin: Annotated[AdminUser, Depends(require_admin("admin.operate"))],
+):
+    if not billing.link_customer(tenant_id, payload.customer_id):
+        raise HTTPException(status_code=409, detail="Unknown tenant or customer already linked elsewhere.")
+    audit(admin.email, "billing.customer_linked", "tenant", tenant_id, None)
 
 
 @router.get("/audit-logs", tags=["governance"])
@@ -93,8 +111,29 @@ def run_retention(admin: Annotated[AdminUser, Depends(require_admin("admin.opera
 
 
 @router.post("/webhooks/{provider}", status_code=202, tags=["webhooks"])
-async def webhook(provider: str, request: Request, x_gxrag_signature: Annotated[str | None, Header()] = None):
+async def webhook(
+    provider: str,
+    request: Request,
+    x_gxrag_signature: Annotated[str | None, Header()] = None,
+    stripe_signature: Annotated[str | None, Header()] = None,
+):
     body = await request.body()
-    verify_webhook(body, x_gxrag_signature, settings.webhook_secret)
-    audit(provider, "webhook.received", "webhook", provider)
-    return {"accepted": True}
+    if provider == "stripe":
+        verify_webhook(body, stripe_signature, settings.stripe_webhook_secret)
+    else:
+        verify_webhook(body, x_gxrag_signature, settings.webhook_secret)
+    try:
+        event = json.loads(body)
+        event_id = str(event["id"]) if isinstance(event, dict) and event.get("id") else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Webhook body must be JSON.") from None
+    if event_id is None:
+        raise HTTPException(status_code=400, detail="Webhook event id is required.")
+    if not billing.first_delivery(provider, event_id):
+        return {"accepted": True, "duplicate": True}
+    tenant_id = None
+    if provider == "stripe" and isinstance(event.get("data", {}).get("object"), dict):
+        customer = event["data"]["object"].get("customer")
+        tenant_id = billing.tenant_for_customer(customer) if isinstance(customer, str) else None
+    audit(provider, f"webhook.{event.get('type', 'received')}", "tenant" if tenant_id else "webhook", tenant_id or event_id)
+    return {"accepted": True, "duplicate": False}
