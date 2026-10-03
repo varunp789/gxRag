@@ -3,7 +3,9 @@ WORKDIR /workspace
 COPY apps/api /workspace/apps/api
 RUN pip install --no-cache-dir /workspace/apps/api \
     && useradd --system --uid 10001 gxrag && mkdir -p /var/lib/gxrag && chown gxrag /var/lib/gxrag
-ENV GXRAG_ARTIFACT_ROOT=/var/lib/gxrag/artifacts
+# Images are secure by default; docker-compose opts into development explicitly.
+ENV GXRAG_ARTIFACT_ROOT=/var/lib/gxrag/artifacts \
+    GXRAG_ENVIRONMENT=production
 USER gxrag
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health').status==200 else 1)"

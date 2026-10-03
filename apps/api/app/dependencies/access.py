@@ -166,14 +166,3 @@ def require_permission(permission: str) -> Callable[..., WorkspaceAccess]:
         return access
 
     return dependency
-
-
-def get_current_workspace(
-    principal: Annotated[Principal, Depends(get_principal)],
-    x_workspace_id: Annotated[str | None, Header()] = None,
-) -> Workspace:
-    """Workspace for the caller, requiring only membership (``workspace.read``)."""
-    access = _resolve_workspace_access(principal, x_workspace_id)
-    if "workspace.read" not in access.permissions and principal.kind != "api_key":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing permission: workspace.read.")
-    return access.workspace

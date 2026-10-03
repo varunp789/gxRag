@@ -297,4 +297,8 @@ environment, live third-party accounts or a human decision stay open even where 
   OpenSearch or ArangoDB yet - those indexes are written but not read.
 - Ingestion adapters for image and audio remain flagged `supports_v1=False` (jobs end in `needs_review`).
 - Query/answer logs and the answer cache are in-memory; the rate limiter is per process.
+- The registry reloads the full PostgreSQL state on every operation and writes changed rows with last-writer-wins
+  semantics. That is correct for the current single-digit-worker deployment but is O(n) per request and can lose a
+  concurrent update to the same row; replace with row-level repositories (and `SELECT ... FOR UPDATE` on job state)
+  before scaling out.
 - No tenant/user/membership management API; the catalog is seeded.
