@@ -2,8 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.access import get_current_admin, get_current_workspace
-from app.models.access import AdminUser, Workspace
+from app.dependencies.access import WorkspaceAccess, require_admin, require_permission
+from app.models.access import AdminUser
 from app.models.asset import (
     ArtifactInspection,
     AssetBundle,
@@ -36,33 +36,33 @@ router = APIRouter()
 
 @router.get("/assets", response_model=list[AssetBundle], tags=["assets"])
 def asset_list(
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.read"))],
 ) -> list[AssetBundle]:
-    return list_assets(workspace)
+    return list_assets(access.workspace)
 
 
 @router.post("/assets/upload", response_model=AssetBundle, tags=["assets"])
 def upload_asset(
     payload: UploadAssetRequest,
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.write"))],
 ) -> AssetBundle:
-    return create_uploaded_asset(payload, workspace)
+    return create_uploaded_asset(payload, access.workspace, actor=access.principal.actor)
 
 
 @router.post("/assets/from-url", response_model=AssetBundle, tags=["assets"])
 def asset_from_url(
     payload: CreateAssetFromUrlRequest,
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.write"))],
 ) -> AssetBundle:
-    return create_url_asset(payload, workspace)
+    return create_url_asset(payload, access.workspace, actor=access.principal.actor)
 
 
 @router.get("/assets/{asset_id}", response_model=AssetBundle, tags=["assets"])
 def asset_detail(
     asset_id: str,
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.read"))],
 ) -> AssetBundle:
-    bundle = get_asset_bundle(asset_id, workspace)
+    bundle = get_asset_bundle(asset_id, access.workspace)
     if bundle is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -74,9 +74,9 @@ def asset_detail(
 @router.get("/assets/{asset_id}/status", response_model=AssetStatusResponse, tags=["assets"])
 def asset_status(
     asset_id: str,
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.read"))],
 ) -> AssetStatusResponse:
-    response = get_asset_status(asset_id, workspace)
+    response = get_asset_status(asset_id, access.workspace)
     if response is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -89,9 +89,9 @@ def asset_status(
 def start_processing(
     asset_id: str,
     payload: ProcessAssetRequest,
-    workspace: Annotated[Workspace, Depends(get_current_workspace)],
+    access: Annotated[WorkspaceAccess, Depends(require_permission("assets.write"))],
 ) -> AssetStatusResponse:
-    response = process_asset(asset_id, payload, workspace)
+    response = process_asset(asset_id, payload, access.workspace)
     if response is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -102,7 +102,7 @@ def start_processing(
 
 @router.get("/admin/assets", response_model=list[AssetBundle], tags=["admin"])
 def admin_asset_list(
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.support"))],
 ) -> list[AssetBundle]:
     return list_assets_for_admin()
 
@@ -113,14 +113,14 @@ def admin_asset_list(
     tags=["admin"],
 )
 def ingestion_diagnostics(
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.support"))],
 ) -> list[IngestionDiagnostic]:
     return list_ingestion_diagnostics()
 
 
 @router.get("/admin/jobs", response_model=list[ProcessingJob], tags=["admin"])
 def admin_job_list(
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.support"))],
 ) -> list[ProcessingJob]:
     return list_processing_jobs()
 
@@ -128,9 +128,9 @@ def admin_job_list(
 @router.post("/admin/jobs/{job_id}/retry", response_model=ProcessingJob, tags=["admin"])
 def retry_job(
     job_id: str,
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    admin: Annotated[AdminUser, Depends(require_admin("admin.operate"))],
 ) -> ProcessingJob:
-    job = retry_processing_job(job_id)
+    job = retry_processing_job(job_id, actor=admin.email)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Processing job not found.")
     return job
@@ -143,7 +143,7 @@ def retry_job(
 )
 def admin_artifact_inspection(
     asset_id: str,
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.support"))],
 ) -> ArtifactInspection:
     inspection = get_artifact_inspection(asset_id)
     if inspection is None:
@@ -160,7 +160,7 @@ def admin_artifact_inspection(
     tags=["admin"],
 )
 def index_diagnostics(
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.support"))],
 ) -> list[IndexDiagnostic]:
     return list_index_diagnostics()
 
@@ -171,6 +171,6 @@ def index_diagnostics(
     tags=["admin"],
 )
 def reconcile_indexes(
-    _: Annotated[AdminUser, Depends(get_current_admin)],
+    _: Annotated[AdminUser, Depends(require_admin("admin.operate"))],
 ) -> list[ProcessingJob]:
     return enqueue_index_reconciliation()

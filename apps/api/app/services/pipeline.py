@@ -193,7 +193,13 @@ def run_processing_stages(
     title: str,
     asset_type: str,
     adapter_result: AdapterResult,
+    stats: dict[str, int] | None = None,
 ) -> list[PipelineStageResult]:
+    stats = stats or {}
+
+    def count(name: str, default: int) -> str:
+        return str(stats.get(name, default))
+
     shared = {
         "asset_type": asset_type,
         "adapter_key": adapter_result.adapter_key,
@@ -221,37 +227,37 @@ def run_processing_stages(
         PipelineStageResult(
             artifact_type="content_chunks",
             output_format="jsonl",
-            metadata={**shared, "chunk_strategy": "semantic-window", "chunk_count": "8"},
+            metadata={**shared, "chunk_strategy": "semantic-window", "chunk_count": count("chunk_count", 8)},
             warnings=[],
         ),
         PipelineStageResult(
             artifact_type="embedding_vectors",
             output_format="jsonl",
-            metadata={**shared, "embedding_model": "mock-text-embedding-3-large"},
+            metadata={**shared, "embedding_model": "local-trigram-256"},
             warnings=[],
         ),
         PipelineStageResult(
             artifact_type="entity_catalog",
             output_format="json",
-            metadata={**shared, "entity_count": "6"},
+            metadata={**shared, "entity_count": count("entity_count", 6)},
             warnings=[],
         ),
         PipelineStageResult(
             artifact_type="relation_catalog",
             output_format="json",
-            metadata={**shared, "relation_count": "7"},
+            metadata={**shared, "relation_count": count("relation_count", 7)},
             warnings=[],
         ),
         PipelineStageResult(
             artifact_type="graph_snapshot",
             output_format="json",
-            metadata={**shared, "node_count": "6", "edge_count": "7"},
+            metadata={**shared, "node_count": count("node_count", 6), "edge_count": count("edge_count", 7)},
             warnings=[],
         ),
         PipelineStageResult(
             artifact_type="structured_registry",
             output_format="json",
-            metadata={**shared, "table_count": "1", "row_count": "24"},
+            metadata={**shared, "table_count": count("table_count", 1), "row_count": count("row_count", 24)},
             warnings=[],
         ),
     ]

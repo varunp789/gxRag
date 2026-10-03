@@ -79,21 +79,38 @@ def _arango_request(method: str, path: str, payload: dict | None = None) -> http
     )
 
 
+def _entity_key(workspace_id: str, asset_id: str, entity: str) -> str:
+    return hashlib.sha1(f"{workspace_id}:{asset_id}:{entity}".encode()).hexdigest()
+
+
 def write_graph(*, workspace_id: str, asset_id: str, entities: list[str], relations: list[tuple[str, str]]) -> IndexWriteResult:
     database = settings.arangodb_database
     _arango_request("POST", "/_api/database", {"name": database})
-    collection = "gxrag_entities"
-    response = _arango_request("POST", f"/_db/{database}/_api/collection", {"name": collection})
-    if response.status_code not in {200, 201, 202, 409}:
-        response.raise_for_status()
+    vertices, edges = "gxrag_entities", "gxrag_relations"
+    for name, collection_type in ((vertices, 2), (edges, 3)):  # 2 = document, 3 = edge
+        response = _arango_request("POST", f"/_db/{database}/_api/collection", {"name": name, "type": collection_type})
+        if response.status_code not in {200, 201, 202, 409}:
+            response.raise_for_status()
     for entity in entities:
-        key = hashlib.sha1(f"{workspace_id}:{asset_id}:{entity}".encode()).hexdigest()
-        response = _arango_request("POST", f"/_db/{database}/_api/document/{collection}", {
-            "_key": key, "workspace_id": workspace_id, "asset_id": asset_id, "label": entity,
+        response = _arango_request("POST", f"/_db/{database}/_api/document/{vertices}", {
+            "_key": _entity_key(workspace_id, asset_id, entity), "workspace_id": workspace_id,
+            "asset_id": asset_id, "label": entity,
         })
         if response.status_code not in {201, 202, 409}:
             response.raise_for_status()
-    return IndexWriteResult("graph", "arangodb", len(entities) + len(relations), f"{collection}:{asset_id}")
+    known = set(entities)
+    for left, right in relations:
+        if left not in known or right not in known:
+            continue
+        response = _arango_request("POST", f"/_db/{database}/_api/document/{edges}", {
+            "_key": hashlib.sha1(f"{workspace_id}:{asset_id}:{left}->{right}".encode()).hexdigest(),
+            "_from": f"{vertices}/{_entity_key(workspace_id, asset_id, left)}",
+            "_to": f"{vertices}/{_entity_key(workspace_id, asset_id, right)}",
+            "workspace_id": workspace_id, "asset_id": asset_id,
+        })
+        if response.status_code not in {201, 202, 409}:
+            response.raise_for_status()
+    return IndexWriteResult("graph", "arangodb", len(entities) + len(relations), f"{vertices}:{asset_id}")
 
 
 def write_structured(*, workspace_id: str, asset_id: str, rows: list[dict[str, str]]) -> IndexWriteResult:

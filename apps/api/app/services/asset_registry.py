@@ -34,8 +34,10 @@ from app.services.pipeline import (
     utc_now,
 )
 from app.core.config import settings
+from app.db import store as db_store
 from app.services.job_queue import enqueue
 from app.services.extractors import extract, read_source
+from app.services.text import chunk_text, extract_entities, extract_relations
 from app.services.index_backends import write_graph, write_keyword, write_structured, write_vector
 from app.services.governance import audit, enforce_quota, record
 
@@ -53,10 +55,8 @@ def _state_path() -> Path:
     return Path(settings.processing_state_path)
 
 
-def _persist_state() -> None:
-    path = _state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+def _snapshot() -> dict[str, list[dict]]:
+    return {
         "assets": [item.model_dump(mode="json") for item in ASSETS],
         "sources": [item.model_dump(mode="json") for item in ASSET_SOURCES],
         "uploads": [item.model_dump(mode="json") for item in ASSET_UPLOADS],
@@ -65,22 +65,45 @@ def _persist_state() -> None:
         "jobs": [item.model_dump(mode="json") for item in PROCESSING_JOBS],
         "indexes": [item.model_dump(mode="json") for item in INDEX_RECORDS],
     }
-    path.write_text(json.dumps(payload, indent=2))
+
+
+def _persist_state() -> None:
+    if db_store.enabled():
+        db_store.save_all(_snapshot())
+        return
+    path = _state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_snapshot(), indent=2))
+
+
+def _apply_payload(payload: dict) -> None:
+    """Replace in-memory state in place; other modules hold references to these lists."""
+    ASSETS[:] = [Asset.model_validate(item) for item in payload["assets"]]
+    ASSET_SOURCES[:] = [AssetSource.model_validate(item) for item in payload["sources"]]
+    ASSET_UPLOADS[:] = [AssetUpload.model_validate(item) for item in payload["uploads"]]
+    ASSET_VERSIONS[:] = [AssetVersion.model_validate(item) for item in payload["versions"]]
+    ARTIFACTS[:] = [Artifact.model_validate(item) for item in payload["artifacts"]]
+    PROCESSING_JOBS[:] = [ProcessingJob.model_validate(item) for item in payload["jobs"]]
+    INDEX_RECORDS[:] = [IndexRecord.model_validate(item) for item in payload["indexes"]]
 
 
 def _load_state() -> bool:
+    if db_store.enabled():
+        payload = db_store.load_all()
+        if not payload["assets"]:
+            return False
+        _apply_payload(payload)
+        return True
     path = _state_path()
     if not path.exists():
         return False
-    payload = json.loads(path.read_text())
-    ASSETS.extend(Asset.model_validate(item) for item in payload["assets"])
-    ASSET_SOURCES.extend(AssetSource.model_validate(item) for item in payload["sources"])
-    ASSET_UPLOADS.extend(AssetUpload.model_validate(item) for item in payload["uploads"])
-    ASSET_VERSIONS.extend(AssetVersion.model_validate(item) for item in payload["versions"])
-    ARTIFACTS.extend(Artifact.model_validate(item) for item in payload["artifacts"])
-    PROCESSING_JOBS.extend(ProcessingJob.model_validate(item) for item in payload["jobs"])
-    INDEX_RECORDS.extend(IndexRecord.model_validate(item) for item in payload["indexes"])
+    _apply_payload(json.loads(path.read_text()))
     return True
+
+
+def reset_state() -> None:
+    """Drop in-memory state (tests and fresh-process bootstrap)."""
+    _apply_payload({key: [] for key in db_store.TABLES})
 
 
 def _new_id(prefix: str) -> str:
@@ -155,9 +178,13 @@ def _complete_steps(
 
 
 def seed_assets() -> None:
-    if ASSETS:
-        return
-    if _load_state():
+    """Make in-memory state current; seed the demo asset into an empty store."""
+    if db_store.enabled():
+        # API and worker are separate processes: always read the shared database.
+        if _load_state():
+            return
+        _apply_payload({key: [] for key in db_store.TABLES})
+    elif ASSETS or _load_state():
         return
 
     created_at = "2026-08-13T10:00:00Z"
@@ -476,7 +503,7 @@ def get_asset_bundle(asset_id: str, workspace: Workspace) -> AssetBundle | None:
     return _bundle_for_asset(asset)
 
 
-def create_uploaded_asset(payload: UploadAssetRequest, workspace: Workspace) -> AssetBundle:
+def create_uploaded_asset(payload: UploadAssetRequest, workspace: Workspace, actor: str = "system") -> AssetBundle:
     enforce_quota(workspace.id, "document")
     created_at = utc_now()
     asset_id = _new_id("asset")
@@ -536,11 +563,11 @@ def create_uploaded_asset(payload: UploadAssetRequest, workspace: Workspace) -> 
     ASSETS.append(asset)
     _persist_state()
     record(workspace.id, "document")
-    audit("workspace_user", "asset.uploaded", "asset", asset.id)
+    audit(actor, "asset.uploaded", "asset", asset.id, workspace.id)
     return _bundle_for_asset(asset)
 
 
-def create_url_asset(payload: CreateAssetFromUrlRequest, workspace: Workspace) -> AssetBundle:
+def create_url_asset(payload: CreateAssetFromUrlRequest, workspace: Workspace, actor: str = "system") -> AssetBundle:
     enforce_quota(workspace.id, "document")
     created_at = utc_now()
     asset_id = _new_id("asset")
@@ -588,7 +615,7 @@ def create_url_asset(payload: CreateAssetFromUrlRequest, workspace: Workspace) -
     ASSETS.append(asset)
     _persist_state()
     record(workspace.id, "document")
-    audit("workspace_user", "asset.registered", "asset", asset.id)
+    audit(actor, "asset.registered", "asset", asset.id, workspace.id)
     return _bundle_for_asset(asset)
 
 
@@ -623,13 +650,21 @@ def _execute_asset(
     )
     job_id = job_id or _new_id("job")
     job_steps = create_job_steps(job_id, result.adapter_key)
-    artifact_version = 1 + len([artifact for artifact in ARTIFACTS if artifact.asset_id == asset.id])
+    artifact_version = 1 + max((artifact.version for artifact in ARTIFACTS if artifact.asset_id == asset.id), default=0)
+    chunks = chunk_text(extracted.text) or [asset.title]
+    entities = extract_entities(extracted.text)
+    relations = extract_relations(chunks, entities)
     stages = run_processing_stages(
         asset_id=asset.id,
         workspace_id=workspace.id,
         title=asset.title,
         asset_type=asset.asset_type,
         adapter_result=result,
+        stats={
+            "chunk_count": len(chunks), "entity_count": len(entities), "relation_count": len(relations),
+            "node_count": len(entities), "edge_count": len(relations),
+            "table_count": 1 if extracted.rows else 0, "row_count": len(extracted.rows),
+        },
     )
     produced_artifacts: list[Artifact] = []
     step_names = [step.name for step in job_steps]
@@ -662,12 +697,10 @@ def _execute_asset(
         artifact_ids=[artifact.id for artifact in produced_artifacts],
         asset_type=asset.asset_type,
     )
-    chunks = [extracted.text[offset : offset + 1000] for offset in range(0, len(extracted.text), 1000)] or [asset.title]
-    entities = sorted({word.strip(".,:;()[]") for word in extracted.text.split() if word[:1].isupper()})[:100]
     writers = {
         "vector": lambda: write_vector(workspace_id=workspace.id, asset_id=asset.id, chunks=chunks),
         "keyword": lambda: write_keyword(workspace_id=workspace.id, asset_id=asset.id, title=asset.title, chunks=chunks),
-        "graph": lambda: write_graph(workspace_id=workspace.id, asset_id=asset.id, entities=entities, relations=[]),
+        "graph": lambda: write_graph(workspace_id=workspace.id, asset_id=asset.id, entities=entities, relations=relations),
         "structured": lambda: write_structured(workspace_id=workspace.id, asset_id=asset.id, rows=extracted.rows),
     }
     observed_indexes: list[IndexRecord] = []
@@ -808,7 +841,7 @@ def run_queued_job(job_id: str) -> ProcessingJob | None:
     return _find_job(job_id)
 
 
-def retry_processing_job(job_id: str) -> ProcessingJob | None:
+def retry_processing_job(job_id: str, actor: str = "platform_admin") -> ProcessingJob | None:
     seed_assets()
     job = _find_job(job_id)
     if job is None:
@@ -825,7 +858,7 @@ def retry_processing_job(job_id: str) -> ProcessingJob | None:
     })
     PROCESSING_JOBS[PROCESSING_JOBS.index(job)] = retried
     _persist_state()
-    audit("platform_admin", "processing_job.retry_requested", "processing_job", job_id)
+    audit(actor, "processing_job.retry_requested", "processing_job", job_id, job.workspace_id)
     enqueue(job_id)
     return retried
 

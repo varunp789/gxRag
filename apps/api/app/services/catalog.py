@@ -41,45 +41,57 @@ PLANS = [
     ),
 ]
 
+_PERMISSION_DESCRIPTIONS = {
+    "workspace.read": "Read workspace configuration and metadata.",
+    "assets.read": "List assets and read their status and artifacts.",
+    "assets.write": "Upload, register and process assets.",
+    "assets.delete": "Request deletion of assets.",
+    "assets.export": "Export asset data.",
+    "query.run": "Run retrieval and hosted-answer queries.",
+    "usage.read": "Read workspace usage and quota consumption.",
+    "api_key.manage": "Create and revoke API keys for a workspace.",
+    "billing.manage": "Open the billing portal for a workspace.",
+    "admin.support": "Perform support and inspection actions in the admin portal.",
+    "admin.operate": "Retry jobs and trigger index reconciliation.",
+    "audit.read": "Read the audit log.",
+}
+
 PERMISSIONS = [
-    Permission(
-        id="perm_workspace_read",
-        name="workspace.read",
-        description="Read workspace configuration and metadata.",
-    ),
-    Permission(
-        id="perm_api_key_manage",
-        name="api_key.manage",
-        description="Create and revoke API keys for a workspace.",
-    ),
-    Permission(
-        id="perm_admin_support",
-        name="admin.support",
-        description="Perform support and inspection actions in the admin portal.",
-    ),
+    Permission(id="perm_" + name.replace(".", "_"), name=name, description=description)
+    for name, description in _PERMISSION_DESCRIPTIONS.items()
 ]
 
+
+def _perm_ids(*names: str) -> list[str]:
+    return ["perm_" + name.replace(".", "_") for name in names]
+
+
+_WORKSPACE_ALL = ("workspace.read", "assets.read", "assets.write", "assets.delete",
+                  "assets.export", "query.run", "usage.read", "api_key.manage", "billing.manage")
+
 ROLES = [
-    Role(
-        id="role_workspace_owner",
-        name="workspace_owner",
-        permission_ids=["perm_workspace_read", "perm_api_key_manage"],
-    ),
-    Role(
-        id="role_analyst",
-        name="analyst",
-        permission_ids=["perm_workspace_read"],
-    ),
-    Role(
-        id="role_platform_admin",
-        name="platform_admin",
-        permission_ids=[
-            "perm_workspace_read",
-            "perm_api_key_manage",
-            "perm_admin_support",
-        ],
-    ),
+    Role(id="role_workspace_owner", name="workspace_owner", permission_ids=_perm_ids(*_WORKSPACE_ALL)),
+    Role(id="role_analyst", name="analyst",
+         permission_ids=_perm_ids("workspace.read", "assets.read", "query.run", "usage.read")),
+    Role(id="role_ingestion_writer", name="ingestion_writer",
+         permission_ids=_perm_ids("assets.read", "assets.write")),
+    Role(id="role_retrieval_reader", name="retrieval_reader",
+         permission_ids=_perm_ids("assets.read", "query.run")),
+    Role(id="role_support_admin", name="support_admin", permission_ids=_perm_ids("admin.support")),
+    Role(id="role_platform_admin", name="platform_admin",
+         permission_ids=_perm_ids("admin.support", "admin.operate", "audit.read")),
 ]
+
+
+def permissions_for_roles(role_names: list[str] | tuple[str, ...]) -> set[str]:
+    """Resolve role names to permission names (unknown roles grant nothing)."""
+    by_id = {permission.id: permission.name for permission in PERMISSIONS}
+    return {
+        by_id[permission_id]
+        for role in ROLES if role.name in role_names
+        for permission_id in role.permission_ids
+    }
+
 
 TENANTS = [
     Tenant(
@@ -188,7 +200,7 @@ WORKSPACE_MEMBERS = [
         workspace_id="ws_rivet_trial",
         user_id="user_nia",
         role="workspace_owner",
-        status="invited",
+        status="active",
     ),
 ]
 
@@ -420,4 +432,13 @@ def get_workspace_scope(workspace_id: str) -> WorkspaceScope | None:
             member for member in WORKSPACE_MEMBERS if member.workspace_id == workspace_id
         ],
         api_keys=[key for key in API_KEYS if key.workspace_id == workspace_id],
+    )
+
+
+def get_membership(user_id: str, workspace_id: str) -> WorkspaceMember | None:
+    return next(
+        (member for member in WORKSPACE_MEMBERS
+         if member.user_id == user_id and member.workspace_id == workspace_id
+         and member.status == "active"),
+        None,
     )
